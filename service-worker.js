@@ -7,6 +7,7 @@ const CACHE_NAME = 'plano-metas-v1';
 const ASSETS_TO_CACHE = [
   './index.html',
   './manifest.json',
+  './supabase.js',
   './icon-192.png',
   './icon-512.png'
 ];
