@@ -92,6 +92,20 @@ nav{margin-top:26px;display:flex;flex-direction:column;gap:2px;flex:1;}
 .navlink:hover{background:rgba(255,255,255,.07);color:#fff;}
 .navlink.active{background:var(--brand-grad);color:#fff;font-weight:600;box-shadow:0 3px 10px rgba(226,55,30,.35);}
 .navlink .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.55;flex-shrink:0;}
+.navgroup-head{
+  display:flex;align-items:center;gap:10px;justify-content:space-between;
+  padding:9px 10px;border-radius:8px;
+  color:#cfc9ba;font-size:13.5px;font-weight:500;
+  cursor:pointer;border:none;background:none;text-align:left;width:100%;
+  transition:background .15s, color .15s;
+}
+.navgroup-head:hover{background:rgba(255,255,255,.07);color:#fff;}
+.navgroup-head.has-active{color:#fff;font-weight:600;}
+.navgroup-head .chev{transition:transform .15s;opacity:.6;font-size:11px;}
+.navgroup-head.open .chev{transform:rotate(90deg);}
+.navgroup-items{display:flex;flex-direction:column;gap:2px;max-height:0;overflow:hidden;transition:max-height .2s ease;padding-left:14px;}
+.navgroup-items.open{max-height:400px;}
+.navgroup-items .navlink{font-size:13px;padding:8px 10px;}
 .sidebar-foot{font-size:11px;color:#867f6e;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);margin-top:10px;}
 .sidebar-user{font-size:12px;color:#e9e6dd;font-weight:600;}
 
@@ -315,6 +329,10 @@ button{font-family:'Inter';cursor:pointer;}
       <section id="tab-colaboradores" class="tab-panel"></section>
       <section id="tab-porteiro" class="tab-panel"></section>
       <section id="tab-comercial" class="tab-panel"></section>
+      <section id="tab-pedagogico" class="tab-panel"></section>
+      <section id="tab-marketing" class="tab-panel"></section>
+      <section id="tab-fornecedores" class="tab-panel"></section>
+      <section id="tab-contasapagar" class="tab-panel"></section>
       <section id="tab-administrativo" class="tab-panel"></section>
       <section id="tab-financeiro" class="tab-panel"></section>
       <section id="tab-geral" class="tab-panel"></section>
@@ -367,7 +385,8 @@ async function getJSON(key, fallback){
     const TABLE_MAP = {
       periodCrescimento: {table:'period_crescimento', col:'ciclo_id'},
       periodAdmin: {table:'period_admin', col:'mes_id'},
-      periodFinanceiro: {table:'period_financeiro', col:'bim_id'}
+      periodFinanceiro: {table:'period_financeiro', col:'bim_id'},
+      periodComercial: {table:'period_comercial', col:'mes_id'}
     };
     const map = TABLE_MAP[key];
     if(map){
@@ -405,7 +424,8 @@ async function setJSON(key, value){
     const TABLE_MAP = {
       periodCrescimento: {table:'period_crescimento', col:'ciclo_id'},
       periodAdmin: {table:'period_admin', col:'mes_id'},
-      periodFinanceiro: {table:'period_financeiro', col:'bim_id'}
+      periodFinanceiro: {table:'period_financeiro', col:'bim_id'},
+      periodComercial: {table:'period_comercial', col:'mes_id'}
     };
     const map = TABLE_MAP[key];
     if(map){
@@ -436,6 +456,7 @@ let employees = [];
 let periodCrescimento = {};
 let periodAdmin = {};
 let periodFinanceiro = {};
+let periodComercial = {};
 let config = { holidays: [], lastSelected: {} };
 let usuarios = [];
 let currentUser = null;
@@ -461,6 +482,7 @@ async function loadAll(){
   periodCrescimento = await getJSON('periodCrescimento', {});
   periodAdmin = await getJSON('periodAdmin', {});
   periodFinanceiro = await getJSON('periodFinanceiro', {});
+  periodComercial = await getJSON('periodComercial', {});
   config = await getJSON('config', { holidays: [], lastSelected: {} });
   usuarios = await getJSON('usuarios', []);
   ready = true;
@@ -469,6 +491,7 @@ const saveEmployees     = ()=>setJSON('employees', employees);
 const saveCrescimento   = ()=>setJSON('periodCrescimento', periodCrescimento);
 const saveAdmin         = ()=>setJSON('periodAdmin', periodAdmin);
 const saveFinanceiro    = ()=>setJSON('periodFinanceiro', periodFinanceiro);
+const saveComercial     = ()=>setJSON('periodComercial', periodComercial);
 const saveConfig        = ()=>setJSON('config', config);
 const saveUsuarios      = async ()=>{ usuarios = await getJSON('usuarios', []); }; // perfis vêm do Supabase Auth, recarregamos a lista
 
@@ -535,6 +558,56 @@ function showToast(msg){
   el.textContent=msg; el.classList.add('show');
   clearTimeout(window._toastT);
   window._toastT=setTimeout(()=>el.classList.remove('show'), 2400);
+}
+
+// Faixas de comissão (% do salário) por frente — iguais para todas as frentes que usam "padrão", Hunter tem faixa própria.
+function faixaPadrao(pctMeta){
+  if(pctMeta<80) return 0;
+  if(pctMeta<=100) return 10;
+  if(pctMeta<=115) return 15;
+  return 20;
+}
+function faixaHunter(pctMeta){
+  if(pctMeta<80) return 0;
+  if(pctMeta<=100) return 30;
+  if(pctMeta<=115) return 45;
+  return 60;
+}
+// Regras de comissão do setor Comercial, por cargo.
+// Cada frente: {key, label, faixaFn, premioExtra (R$ por matrícula acima da meta) ou null}
+const REGRAS_COMERCIAL = {
+  'Líder comercial': [
+    {key:'organica', label:'Graduação Orgânica', faixaFn:faixaPadrao, premioExtra:10},
+    {key:'hunter',   label:'Graduação Hunter',   faixaFn:faixaHunter, premioExtra:10},
+    {key:'pos',      label:'Pós-graduação',      faixaFn:faixaPadrao, premioExtra:25}
+  ],
+  'Consultor interno graduação': [
+    {key:'organica', label:'Graduação Orgânica', faixaFn:faixaPadrao, premioExtra:10},
+    {key:'hunter',   label:'Graduação Hunter',   faixaFn:faixaHunter, premioExtra:10}
+  ],
+  'Consultor pós-graduação': [
+    {key:'pos', label:'Pós-graduação', faixaFn:faixaPadrao, premioExtra:null}
+  ],
+  'Consultor externo': [
+    {key:'organica', label:'Graduação Orgânica', faixaFn:faixaPadrao, premioExtra:10},
+    {key:'hunter',   label:'Graduação Hunter',   faixaFn:faixaHunter, premioExtra:10}
+  ]
+};
+// reg = { organica:{meta,realizado}, hunter:{meta,realizado}, pos:{meta,realizado} }
+function calcComercial(cargo, salario, reg){
+  const frentes = REGRAS_COMERCIAL[cargo] || [];
+  let totalComissao=0, totalPremio=0;
+  const detalhe = frentes.map(f=>{
+    const r = reg[f.key] || {meta:0, realizado:0};
+    const pctMeta = r.meta>0 ? (r.realizado/r.meta*100) : 0;
+    const pctSalario = f.faixaFn(pctMeta);
+    const valorComissao = salario * pctSalario/100;
+    const extra = r.realizado>r.meta ? (r.realizado-r.meta) : 0;
+    const valorPremio = f.premioExtra!=null ? extra*f.premioExtra : 0;
+    totalComissao += valorComissao; totalPremio += valorPremio;
+    return { ...f, meta:r.meta, realizado:r.realizado, pctMeta, pctSalario, valorComissao, matriculasExtra:extra, valorPremio };
+  });
+  return { detalhe, totalComissao, totalPremio, total: totalComissao+totalPremio };
 }
 
 /* ====================== CALCULATIONS ====================== */
@@ -736,21 +809,52 @@ async function saveUser(id){
 const TABS = [
   {id:'dashboard', label:'Dashboard', title:'Dashboard', sub:'Visão geral do Polo, crescimento e premiações.'},
   {id:'colaboradores', label:'Colaboradores', title:'Colaboradores', sub:'Cadastro da equipe por setor e salário registrado em carteira.'},
-  {id:'porteiro', label:'Porteiros & ASG', title:'Porteiros & ASG', sub:'Premiação por crescimento da base de alunos (verão/inverno).'},
-  {id:'comercial', label:'Comercial', title:'Comercial', sub:'Cadastro da equipe comercial — regra de premiação a definir.'},
-  {id:'administrativo', label:'Administrativo', title:'Administrativo e Atendimento ao Aluno', sub:'Rematrícula, matrícula e adimplência — metas da equipe, apuração mensal.'},
-  {id:'financeiro', label:'Financeiro (Cobrança)', title:'Financeiro — Cobrança', sub:'Inadimplência por colaborador — apuração bimestral.'},
-  {id:'geral', label:'Premiação Geral', title:'Premiação Geral', sub:'Confraternização por crescimento do Polo.'},
+  {id:'porteiro', label:'Porteiros & ASG', title:'Porteiros & ASG', sub:'Premiação por crescimento da base de alunos (verão/inverno).', group:'comissoes'},
+  {id:'comercial', label:'Comercial', title:'Comercial', sub:'Comissão por meta móvel de matrículas — apuração mensal.', group:'comissoes'},
+  {id:'administrativo', label:'Administrativo', title:'Administrativo e Atendimento ao Aluno', sub:'Rematrícula, matrícula e adimplência — metas da equipe, apuração mensal.', group:'comissoes'},
+  {id:'financeiro', label:'Financeiro (Cobrança)', title:'Financeiro — Cobrança', sub:'Inadimplência por colaborador — apuração bimestral.', group:'comissoes'},
+  {id:'geral', label:'Premiação Geral', title:'Premiação Geral', sub:'Confraternização por crescimento do Polo.', group:'comissoes'},
+  {id:'pedagogico', label:'Pedagógico', title:'Pedagógico', sub:'Em breve.'},
+  {id:'marketing', label:'Marketing', title:'Marketing', sub:'Em breve.'},
+  {id:'fornecedores', label:'Fornecedores', title:'Fornecedores', sub:'Em breve.'},
+  {id:'contasapagar', label:'Contas a pagar', title:'Contas a pagar', sub:'Em breve.'},
   {id:'usuarios', label:'Usuários', title:'Usuários', sub:'Controle de acesso ao sistema — login e senha.', roleOnly:'Gestor'},
   {id:'config', label:'Configurações', title:'Configurações', sub:'Feriados para cálculo de dias úteis e backup dos dados.', roleOnly:'Gestor'}
 ];
+const NAV_GROUPS = { comissoes: { label:'Comissões' } };
 let activeTab='dashboard';
+let openNavGroups = {comissoes:true};
 
 function renderNav(){
   const nav=document.getElementById('nav');
   const visiveis = TABS.filter(t=> !t.roleOnly || (currentUser && currentUser.papel===t.roleOnly));
-  nav.innerHTML = visiveis.map(t=>`<button class="navlink ${t.id===activeTab?'active':''}" data-tab="${t.id}"><span class="dot"></span>${t.label}</button>`).join('');
+  let html='';
+  const renderedGroups=new Set();
+  visiveis.forEach(t=>{
+    if(t.group){
+      if(renderedGroups.has(t.group)) return;
+      renderedGroups.add(t.group);
+      const itemsDoGrupo = visiveis.filter(x=>x.group===t.group);
+      const hasActive = itemsDoGrupo.some(x=>x.id===activeTab);
+      const isOpen = !!openNavGroups[t.group] || hasActive;
+      html += `<button class="navgroup-head ${hasActive?'has-active':''} ${isOpen?'open':''}" data-group="${t.group}">
+        <span style="display:flex;align-items:center;gap:10px;"><span class="dot"></span>${NAV_GROUPS[t.group].label}</span>
+        <span class="chev">▶</span>
+      </button>
+      <div class="navgroup-items ${isOpen?'open':''}" data-group-items="${t.group}">
+        ${itemsDoGrupo.map(x=>`<button class="navlink ${x.id===activeTab?'active':''}" data-tab="${x.id}"><span class="dot"></span>${x.label}</button>`).join('')}
+      </div>`;
+    } else {
+      html += `<button class="navlink ${t.id===activeTab?'active':''}" data-tab="${t.id}"><span class="dot"></span>${t.label}</button>`;
+    }
+  });
+  nav.innerHTML = html;
   nav.querySelectorAll('.navlink').forEach(b=>b.addEventListener('click', ()=>{ goTab(b.dataset.tab); document.getElementById('sidebar').classList.remove('open'); }));
+  nav.querySelectorAll('.navgroup-head').forEach(b=>b.addEventListener('click', ()=>{
+    const g=b.dataset.group;
+    openNavGroups[g]=!openNavGroups[g];
+    renderNav();
+  }));
   const userEl=document.getElementById('sidebarUser');
   if(userEl) userEl.textContent = currentUser? `${currentUser.nome} · ${currentUser.papel}` : '';
 }
@@ -774,6 +878,10 @@ function renderAll(){
   if(activeTab==='colaboradores') renderColaboradores();
   if(activeTab==='porteiro') renderPorteiro();
   if(activeTab==='comercial') renderComercial();
+  if(activeTab==='pedagogico') renderPlaceholder('pedagogico','Pedagógico');
+  if(activeTab==='marketing') renderPlaceholder('marketing','Marketing');
+  if(activeTab==='fornecedores') renderPlaceholder('fornecedores','Fornecedores');
+  if(activeTab==='contasapagar') renderPlaceholder('contasapagar','Contas a pagar');
   if(activeTab==='administrativo') renderAdministrativo();
   if(activeTab==='financeiro') renderFinanceiro();
   if(activeTab==='geral') renderGeral();
@@ -1007,18 +1115,98 @@ function renderPorteiro(){
   `;
 }
 
-/* ====================== COMERCIAL (cadastro por enquanto — regra de premiação a definir) ====================== */
-function renderComercial(){
-  const emps = empsBySetor('comercial');
-  document.getElementById('tab-comercial').innerHTML = `
-    <div class="rule-box">Aba criada para a equipe <b>Comercial</b> (Líder comercial, Consultor externo, Consultor interno graduação, Consultor pós-graduação). Por enquanto mostra apenas os colaboradores cadastrados — a regra de premiação/meta desse setor ainda será definida e incluída aqui.</div>
-
-    <div class="section-head"><h2>Colaboradores — Comercial</h2><span class="note">${emps.length} colaborador(es)</span></div>
-    ${emps.length? `<table class="app-table">
-      <thead><tr><th>Nome</th><th>Cargo</th><th>Salário</th></tr></thead>
-      <tbody>${emps.map(e=>`<tr><td>${e.nome}</td><td>${e.cargo}</td><td>${brl(e.salario)}</td></tr>`).join('')}</tbody>
-    </table>` : `<div class="empty">Nenhum colaborador cadastrado no setor Comercial. <a href="#" onclick="goTab('colaboradores');return false;">Cadastrar agora</a>.</div>`}
+/* ====================== PLACEHOLDER (abas ainda não desenvolvidas) ====================== */
+function renderPlaceholder(id, nome){
+  document.getElementById('tab-'+id).innerHTML = `
+    <div class="empty" style="padding:40px 20px;text-align:center;">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px;">${nome} — em breve</div>
+      <div class="note">Esta área ainda está sendo planejada. Quando a regra/conteúdo for definido, ela é incluída aqui.</div>
+    </div>
   `;
+}
+
+/* ====================== COMERCIAL (comissão por meta móvel + premiação extra por matrícula) ====================== */
+function renderComercial(){
+  const opts = monthOptions();
+  const current = config.lastSelected.comercial || todayDefaultMonth();
+  const opt = findOpt(opts, current);
+  const data = periodComercial[current] || {registros:{}};
+  const emps = empsBySetor('comercial');
+  let totalMes=0;
+
+  const rowsHtml = emps.map(e=>{
+    const frentes = REGRAS_COMERCIAL[e.cargo] || [];
+    const reg = data.registros[e.id] || {};
+    const r = calcComercial(e.cargo, e.salario, reg);
+    totalMes += r.total;
+    const frentesHtml = frentes.map(f=>{
+      const v = reg[f.key] || {meta:0, realizado:0};
+      return `<div class="field-row" style="display:grid;grid-template-columns:1fr 100px 100px;gap:8px;align-items:end;margin-bottom:8px;">
+        <div class="note" style="align-self:center;">${f.label}</div>
+        <label class="field" style="margin:0;">Meta móvel<input type="number" step="1" class="com-input" data-emp="${e.id}" data-frente="${f.key}" data-campo="meta" value="${v.meta||0}"></label>
+        <label class="field" style="margin:0;">Realizado<input type="number" step="1" class="com-input" data-emp="${e.id}" data-frente="${f.key}" data-campo="realizado" value="${v.realizado||0}"></label>
+      </div>`;
+    }).join('');
+    const detalheHtml = r.detalhe.map(d=>`
+      <div class="note" style="display:flex;justify-content:space-between;gap:8px;">
+        <span>${d.label}: ${d.pctMeta.toFixed(1)}% da meta → ${d.pctSalario}% do salário${d.matriculasExtra>0?` · +${d.matriculasExtra} extra`:''}</span>
+        <span><b>${brl(d.valorComissao + d.valorPremio)}</b></span>
+      </div>`).join('');
+    return `<div class="emp-row" data-emp="${e.id}" style="display:block;padding:16px;">
+      <div class="who" style="margin-bottom:10px;"><div class="nm">${e.nome}</div><div class="cg">${e.cargo} · ${brl(e.salario)}</div></div>
+      ${frentesHtml}
+      <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+        ${detalheHtml || '<span class="note">Sem frentes de comissão configuradas para este cargo.</span>'}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:700;">
+          <span>Total do mês</span><span>${brl(r.total)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('tab-comercial').innerHTML = `
+    <div class="rule-box">Comissão calculada sobre a <b>meta móvel</b> informada todo mês pela Anhanguera Matriz, por frente (Graduação Orgânica, Graduação Hunter e Pós-graduação), aplicada sobre o <b>salário</b> do colaborador:<br>
+    • <b>Orgânica / Pós</b> — 80 a 100% da meta → 10% do salário · 100,1 a 115% → 15% · acima de 115,1% → 20%<br>
+    • <b>Hunter</b> — 80 a 100% da meta → 30% do salário · 100,1 a 115% → 45% · acima de 115,1% → 60%<br>
+    • <b>Premiação extra por matrícula acima da meta</b>: R$10 (Orgânica) + R$10 (Hunter) — para Líder comercial, Consultor interno graduação e Consultor externo · R$25 (Pós) — exclusivo do Líder comercial<br>
+    • <b>Consultor pós-graduação</b>: comissiona só sobre Pós-graduação. O programa "Ponto Focal" (comissão paga diretamente pela Anhanguera Matriz) não entra neste cálculo — é um acordo direto entre o consultor e a Matriz.<br>
+    • <b>Consultor externo</b> não participa da Pós-graduação.</div>
+
+    <div class="toolbar">
+      <label class="field" style="min-width:220px;">Mês de apuração<select id="sel-mes-com">${opts.map(o=>`<option value="${o.id}" ${o.id===current?'selected':''}>${o.label}</option>`).join('')}</select></label>
+      <button class="btn primary" style="align-self:flex-end;" onclick="trocarMesComercial()">Trocar / criar mês</button>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card stat"><span class="label">Total a pagar no mês</span><span class="value">${brl(totalMes)}</span><span class="meta">${opt?opt.label:''}</span></div>
+      <div class="card stat"><span class="label">Colaboradores no setor</span><span class="value">${emps.length}</span><span class="meta">Comercial</span></div>
+    </div>
+
+    <div class="section-head"><h2>Apuração individual</h2><span class="note">${emps.length} colaborador(es)</span></div>
+    ${emps.length? rowsHtml : `<div class="empty">Nenhum colaborador cadastrado no setor Comercial. <a href="#" onclick="goTab('colaboradores');return false;">Cadastrar agora</a>.</div>`}
+    ${emps.length? `<div class="toolbar" style="margin-top:14px;"><button class="btn gold" onclick="salvarComercial()">Salvar apuração do mês</button></div>` : ''}
+  `;
+}
+async function trocarMesComercial(){
+  const mes=document.getElementById('sel-mes-com').value;
+  config.lastSelected.comercial=mes;
+  if(!periodComercial[mes]) periodComercial[mes]={registros:{}};
+  await saveConfig();
+  renderComercial();
+}
+async function salvarComercial(){
+  const mes=document.getElementById('sel-mes-com').value;
+  const registros=(periodComercial[mes]&&periodComercial[mes].registros)||{};
+  document.querySelectorAll('.com-input').forEach(inp=>{
+    const empId=inp.dataset.emp, frente=inp.dataset.frente, campo=inp.dataset.campo;
+    if(!registros[empId]) registros[empId]={};
+    if(!registros[empId][frente]) registros[empId][frente]={meta:0, realizado:0};
+    registros[empId][frente][campo]=parseFloat(inp.value)||0;
+  });
+  periodComercial[mes]={registros};
+  config.lastSelected.comercial=mes;
+  await saveComercial(); await saveConfig();
+  renderComercial(); showToast('Apuração do mês salva.');
 }
 
 /* ====================== ADMINISTRATIVO (3 metas coletivas — uma marcação vale para toda a equipe) ====================== */
@@ -1246,7 +1434,7 @@ async function removeHoliday(h){
   await saveConfig(); renderConfig();
 }
 function exportBackup(){
-  const backup={employees,periodCrescimento,periodAdmin,periodFinanceiro,config,usuarios};
+  const backup={employees,periodCrescimento,periodAdmin,periodFinanceiro,periodComercial,config,usuarios};
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='backup_plano_metas.json'; document.body.appendChild(a); a.click(); a.remove();
@@ -1259,8 +1447,8 @@ function restoreBackup(ev){
     try{
       const b=JSON.parse(reader.result);
       employees=b.employees||[]; periodCrescimento=b.periodCrescimento||{}; periodAdmin=b.periodAdmin||{};
-      periodFinanceiro=b.periodFinanceiro||{}; config=b.config||{holidays:[],lastSelected:{}};
-      await saveEmployees(); await saveCrescimento(); await saveAdmin(); await saveFinanceiro(); await saveConfig();
+      periodFinanceiro=b.periodFinanceiro||{}; periodComercial=b.periodComercial||{}; config=b.config||{holidays:[],lastSelected:{}};
+      await saveEmployees(); await saveCrescimento(); await saveAdmin(); await saveFinanceiro(); await saveComercial(); await saveConfig();
       renderAll(); showToast('Backup restaurado.');
     }catch(e){ showToast('Arquivo inválido.'); }
   };
@@ -1268,8 +1456,8 @@ function restoreBackup(ev){
 }
 async function limparTudo(){
   if(!confirm('Isso apagará TODOS os colaboradores e apurações salvas (os usuários de login serão mantidos). Esta ação não pode ser desfeita. Continuar?')) return;
-  employees=[]; periodCrescimento={}; periodAdmin={}; periodFinanceiro={}; config={holidays:[],lastSelected:{}};
-  await saveEmployees(); await saveCrescimento(); await saveAdmin(); await saveFinanceiro(); await saveConfig();
+  employees=[]; periodCrescimento={}; periodAdmin={}; periodFinanceiro={}; periodComercial={}; config={holidays:[],lastSelected:{}};
+  await saveEmployees(); await saveCrescimento(); await saveAdmin(); await saveFinanceiro(); await saveComercial(); await saveConfig();
   renderAll(); showToast('Os dados de colaboradores e apurações foram apagados.');
 }
 
