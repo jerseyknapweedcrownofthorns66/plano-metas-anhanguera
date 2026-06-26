@@ -154,8 +154,10 @@ main.scroll{padding:18px 32px 60px 32px;flex:1;}
 .card.stat{display:flex;flex-direction:column;gap:6px;}
 .card.stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:rgba(217,165,60,.3);}
 .card.stat .label{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;}
-.card.stat .value{font-size:25px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--gold-light);}
+.card.stat .value{font-size:13px;font-weight:700;font-family:'Inter',sans-serif;color:var(--gold-light);}
 .card.stat .meta{font-size:12px;color:var(--ink-soft);}
+.card.stat .label-value{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;}
+.card.stat .label-value b{font-size:13px;text-transform:none;letter-spacing:0;font-weight:700;color:var(--gold-light);}
 
 .section-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:28px 0 12px;flex-wrap:wrap;}
 .section-head h2{font-size:16px;margin:0;font-weight:700;color:var(--ink);}
@@ -320,7 +322,6 @@ button{font-family:'Inter';cursor:pointer;}
   .sidebar{position:fixed;left:-260px;top:0;z-index:40;transition:left .2s;box-shadow:6px 0 20px rgba(0,0,0,.3);}
   .sidebar.open{left:0;}
   .mobile-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);}
-.mobile-toggle{background-image:var(--brand-grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .topbar{padding:16px 16px 0;}
   main.scroll{padding:14px 16px 50px;}
 }
@@ -1014,22 +1015,22 @@ function renderDashboard(){
     <div class="grid cols-3">
       <div class="card stat"><span class="label">Crescimento apurado</span><span class="value">${pct(cresc)}</span><span class="meta">${optC?optC.label:''}</span></div>
       <div class="card stat"><span class="label">Porteiros / ASG</span><span class="value"><span class="badge ${resPorteiro.hit?'ok':'no'}">${resPorteiro.hit?'Meta de 8% batida':'Meta de 8% não batida'}</span></span><span class="meta">${resPorteiro.hit?'50% do salário por colaborador':'Sem premiação neste ciclo'}</span></div>
-      <div class="card stat"><span class="label">Premiação Geral</span><span class="value">${brl(resGeral.valor)}</span><span class="meta">${resGeral.nivel? 'Nível '+resGeral.nivel+' atingido' : 'Nenhum nível atingido'}</span></div>
+      <div class="card stat"><span class="label-value">Premiação Geral - <b>${brl(resGeral.valor)}</b></span><span class="meta">${resGeral.nivel? 'Nível '+resGeral.nivel+' atingido' : 'Nenhum nível atingido'}</span></div>
     </div>
 
     <div class="section-head"><h2>Premiações por setor (período ativo de cada um)</h2></div>
     <div class="grid cols-4">
-      <div class="card stat"><span class="label">Porteiro / ASG</span><span class="value">${brl(totalP)}</span><span class="meta">${empsBySetor('porteiro_asg').length} colaborador(es)</span></div>
-      <div class="card stat"><span class="label">Comercial</span><span class="value">${brl(totalCom)}</span><span class="meta">${empsBySetor('comercial').length} colaborador(es) · ${optCom?optCom.label:''}</span></div>
-      <div class="card stat"><span class="label">Administrativo</span><span class="value">${brl(totalA)}</span><span class="meta">${calcA.totalPct}% do salário p/ todos · ${optA?optA.label:''}</span></div>
-      <div class="card stat"><span class="label">Financeiro (Cobrança)</span><span class="value">${brl(totalF)}</span><span class="meta">${empsBySetor('financeiro').length} colaborador(es) · ${optF?optF.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Porteiro / ASG - <b>${brl(totalP)}</b></span><span class="meta">${empsBySetor('porteiro_asg').length} colaborador(es)</span></div>
+      <div class="card stat"><span class="label-value">Comercial - <b>${brl(totalCom)}</b></span><span class="meta">${empsBySetor('comercial').length} colaborador(es) · ${optCom?optCom.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Administrativo - <b>${brl(totalA)}</b></span><span class="meta">${calcA.totalPct}% do salário p/ todos · ${optA?optA.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Financeiro (Cobrança) - <b>${brl(totalF)}</b></span><span class="meta">${empsBySetor('financeiro').length} colaborador(es) · ${optF?optF.label:''}</span></div>
     </div>
 
     <div class="section-head"><h2>Divisão das comissões por setor</h2><span class="note">${porteiroFechaEsteMes? 'Inclui Porteiro/ASG — mês de fechamento de ciclo' : 'Porteiro/ASG só aparece no mês de fechamento do ciclo (abril ou setembro)'}</span></div>
     <div class="card" style="padding:20px;">
       ${pizzaTemDados? `
         <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
-          <div style="position:relative;width:220px;height:220px;flex-shrink:0;">
+          <div style="position:relative;width:74px;height:74px;flex-shrink:0;">
             <canvas id="pizzaComissoes" role="img" aria-label="Gráfico de pizza mostrando a divisão das comissões do mês entre os setores"></canvas>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;flex:1;min-width:200px;">
@@ -1086,7 +1087,7 @@ function desenharPizzaComissoes(setores){
         data: setores.map(s=>s.valor),
         backgroundColor: setores.map(s=>s.cor),
         borderColor: '#1C1712',
-        borderWidth: 3,
+        borderWidth: 1.5,
         hoverOffset: 8
       }]
     },
@@ -1311,7 +1312,7 @@ function renderComercial(){
     <div class="card" style="padding:16px;margin-bottom:16px;">${metasInputsHtml}</div>
 
     <div class="grid cols-2">
-      <div class="card stat"><span class="label">Total a pagar no mês</span><span class="value">${brl(totalMes)}</span><span class="meta">${opt?opt.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Total a pagar no mês - <b>${brl(totalMes)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
       <div class="card stat"><span class="label">Colaboradores no setor</span><span class="value">${emps.length}</span><span class="meta">Comercial</span></div>
     </div>
 
@@ -1475,7 +1476,7 @@ function renderFinanceiro(){
     </div>
 
     <div class="grid cols-2">
-      <div class="card stat"><span class="label">Total a pagar no bimestre</span><span class="value">${brl(totalBim)}</span><span class="meta">${opt?opt.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Total a pagar no bimestre - <b>${brl(totalBim)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
       <div class="card stat"><span class="label">Pagamento (5º dia útil)</span><span class="value mono" style="font-size:18px;">${pay?fmtDate(pay):'—'}</span><span class="meta">Fechamento: ${opt?fmtDate(opt.fim):'—'}</span></div>
     </div>
 
@@ -1530,7 +1531,7 @@ function renderGeral(){
     <div class="grid cols-3">
       <div class="card stat"><span class="label">Crescimento apurado</span><span class="value">${pct(cresc)}</span><span class="meta">Metas: 10% e 15%</span></div>
       <div class="card stat"><span class="label">Nível atingido</span><span class="value"><span class="badge ${res.nivel?'ok':'no'}">${res.nivel? 'Nível '+res.nivel : 'Nenhum nível'}</span></span><span class="meta">${res.nivel? 'Verba para confraternização liberada' : 'Sem verba neste ciclo'}</span></div>
-      <div class="card stat"><span class="label">Verba para confraternização</span><span class="value">${brl(res.valor)}</span><span class="meta">A organizar pela direção do Polo</span></div>
+      <div class="card stat"><span class="label-value">Verba para confraternização - <b>${brl(res.valor)}</b></span><span class="meta">A organizar pela direção do Polo</span></div>
     </div>
   `;
 }
