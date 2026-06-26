@@ -319,7 +319,8 @@ button{font-family:'Inter';cursor:pointer;}
 @media(max-width:880px){
   .sidebar{position:fixed;left:-260px;top:0;z-index:40;transition:left .2s;box-shadow:6px 0 20px rgba(0,0,0,.3);}
   .sidebar.open{left:0;}
-  .mobile-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:#E8932A;}
+  .mobile-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);}
+.mobile-toggle{background-image:var(--brand-grad);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .topbar{padding:16px 16px 0;}
   main.scroll{padding:14px 16px 50px;}
 }
