@@ -976,10 +976,11 @@ function renderDashboard(){
 
   const mesCom = sel.comercial || todayDefaultMonth();
   const optCom = findOpt(monthOptions(), mesCom);
-  const dataCom = periodComercial[mesCom] || {poloMatriculas:{}, individuais:{}};
-  const poloMatriculas = dataCom.poloMatriculas || {};
+  const dataCom = periodComercial[mesCom] || {individuais:{}};
   const individuaisCom = dataCom.individuais || {};
-  let totalCom=0; empsBySetor('comercial').forEach(e=>{
+  const empsComercial = empsBySetor('comercial');
+  const poloMatriculas = somaPoloDeIndividuais(individuaisCom, empsComercial);
+  let totalCom=0; empsComercial.forEach(e=>{
     const matriculasUsadas = COMERCIAL_INDIVIDUAL.includes(e.cargo) ? (individuaisCom[e.id]||{}) : poloMatriculas;
     totalCom += calcComercial(e.cargo, matriculasUsadas).total;
   });
@@ -1252,18 +1253,27 @@ const CANAIS_POLO = [
   {key:'hunterPos',   label:'Pós · Hunter'},
   {key:'organicaPos', label:'Pós · Orgânico'}
 ];
+function somaPoloDeIndividuais(individuais, employeesSetor){
+  const soma = {hunterGrad:0, organicaGrad:0, hunterPos:0, organicaPos:0};
+  employeesSetor.forEach(e=>{
+    if(!COMERCIAL_INDIVIDUAL.includes(e.cargo)) return;
+    const ind = individuais[e.id] || {};
+    Object.keys(soma).forEach(k=>{ if(ind[k]!=null) soma[k] += (parseFloat(ind[k])||0); });
+  });
+  return soma;
+}
 function renderComercial(){
   const opts = monthOptions();
   const current = config.lastSelected.comercial || todayDefaultMonth();
   const opt = findOpt(opts, current);
-  const data = periodComercial[current] || {poloMatriculas:{}, individuais:{}};
-  const poloMatriculas = data.poloMatriculas || {};
+  const data = periodComercial[current] || {individuais:{}};
   const individuais = data.individuais || {};
   const emps = empsBySetor('comercial');
+  const poloMatriculas = somaPoloDeIndividuais(individuais, emps);
   let totalMes=0;
 
   const poloInputsHtml = CANAIS_POLO.map(c=>{
-    return `<label class="field" style="margin:0;">${c.label}<input type="number" step="1" min="0" class="com-polo-input" data-canal="${c.key}" value="${poloMatriculas[c.key]||0}"></label>`;
+    return `<div class="field" style="margin:0;"><span>${c.label}</span><div class="mono" id="polo-readonly-${c.key}" style="font-size:13px;font-weight:700;color:var(--gold-light);padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--paper-2);">${poloMatriculas[c.key]||0}</div></div>`;
   }).join('');
 
   const rowsHtml = emps.map(e=>{
@@ -1276,7 +1286,7 @@ function renderComercial(){
 
     const individualInputsHtml = isIndividual ? `
       <div style="display:grid;grid-template-columns:repeat(${frentesDoCargo.length},1fr);gap:10px;margin-bottom:10px;">
-        ${frentesDoCargo.map(f=>`<label class="field" style="margin:0;">${f.label} (matrículas)<input type="number" step="1" min="0" class="com-ind-input" data-emp="${e.id}" data-canal="${f.key}" value="${(individuais[e.id]&&individuais[e.id][f.key])||0}"></label>`).join('')}
+        ${frentesDoCargo.map(f=>`<label class="field" style="margin:0;">${f.label} (matrículas)<input type="number" step="1" min="0" class="com-ind-input" data-emp="${e.id}" data-canal="${f.key}" value="${(individuais[e.id]&&individuais[e.id][f.key])||0}" oninput="atualizarComercialAoVivo()"></label>`).join('')}
       </div>` : '';
 
     const detalheHtml = r.detalhe.map(d=>`
@@ -1285,13 +1295,13 @@ function renderComercial(){
         <span><b>${brl(d.valorTotal)}</b></span>
       </div>`).join('');
 
-    return `<div class="emp-row" data-emp="${e.id}" style="display:block;padding:16px;">
+    return `<div class="emp-row" data-emp="${e.id}" data-cargo="${e.cargo}" style="display:block;padding:16px;">
       <div class="who" style="margin-bottom:10px;"><div class="nm">${e.nome}</div><div class="cg">${e.cargo}${isPolo?' · comissiona sobre o total do Polo':''}</div></div>
       ${individualInputsHtml}
-      <div>
+      <div class="com-detalhe-wrap">
         ${detalheHtml || '<span class="note">Sem frentes de comissão configuradas para este cargo.</span>'}
         <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:700;border-top:1px solid var(--line);padding-top:8px;">
-          <span>Total do mês</span><span>${brl(r.total)}</span>
+          <span>Total do mês</span><span class="com-emp-total">${brl(r.total)}</span>
         </div>
       </div>
     </div>`;
@@ -1302,7 +1312,7 @@ function renderComercial(){
     • <b>Consultor interno graduação</b> (produtividade própria) — Hunter R$15 · Orgânico R$10 · não comissiona sobre Pós<br>
     • <b>Consultor pós-graduação</b> (produtividade própria) — Hunter R$30 · Orgânico R$15 · não comissiona sobre Graduação<br>
     • <b>Consultor externo</b> (sobre o total do Polo) — Hunter Graduação R$25 · Orgânico Graduação R$5 · Hunter Pós R$25 · não comissiona sobre Orgânico de Pós<br>
-    • As <b>matrículas do Polo</b> (usadas por Líder e Consultor externo) são lançadas uma única vez por mês, no topo desta página. Os <b>Consultores internos</b> lançam apenas a própria produtividade, dentro do card de cada um.`);
+    • As <b>matrículas totais do Polo</b> não são digitadas — elas somam automaticamente o que os <b>Consultores internos</b> lançam abaixo, evitando lançar a mesma matrícula duas vezes.`);
 
   document.getElementById('tab-comercial').innerHTML = `
     ${regraComercialHtml}
@@ -1312,13 +1322,13 @@ function renderComercial(){
       <button class="btn primary" style="align-self:flex-end;" onclick="trocarMesComercial()">Trocar / criar mês</button>
     </div>
 
-    <div class="section-head"><h2>Matrículas totais do Polo no mês</h2><span class="note">Usadas para Líder comercial e Consultor externo</span></div>
+    <div class="section-head"><h2>Matrículas totais do Polo no mês</h2><span class="note">Somadas automaticamente a partir dos Consultores internos — usadas para Líder comercial e Consultor externo</span></div>
     <div class="card" style="padding:16px;margin-bottom:16px;">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">${poloInputsHtml}</div>
     </div>
 
     <div class="grid cols-2">
-      <div class="card stat"><span class="label-value">Total a pagar no mês - <b>${brl(totalMes)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
+      <div class="card stat"><span class="label-value">Total a pagar no mês - <b class="com-total-mes">${brl(totalMes)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
       <div class="card stat"><span class="label">Colaboradores no setor</span><span class="value">${emps.length}</span><span class="meta">Comercial</span></div>
     </div>
 
@@ -1327,26 +1337,65 @@ function renderComercial(){
     <div class="toolbar" style="margin-top:14px;"><button class="btn gold" onclick="salvarComercial()">Salvar apuração do mês</button></div>
   `;
 }
+// Recalcula tudo no front-end (sem salvar no banco) toda vez que um Consultor interno altera um campo,
+// para o painel do Polo e os totais do Líder/Externo reagirem na hora.
+function atualizarComercialAoVivo(){
+  const emps = empsBySetor('comercial');
+  const individuais = {};
+  document.querySelectorAll('.com-ind-input').forEach(inp=>{
+    const empId=inp.dataset.emp, canal=inp.dataset.canal;
+    if(!individuais[empId]) individuais[empId]={};
+    individuais[empId][canal]=parseFloat(inp.value)||0;
+  });
+  const poloMatriculas = somaPoloDeIndividuais(individuais, emps);
+
+  CANAIS_POLO.forEach(c=>{
+    const el=document.getElementById('polo-readonly-'+c.key);
+    if(el) el.textContent = poloMatriculas[c.key]||0;
+  });
+
+  let totalMes=0;
+  document.querySelectorAll('.emp-row[data-cargo]').forEach(row=>{
+    const empId=row.dataset.emp, cargo=row.dataset.cargo;
+    const e = emps.find(x=>x.id===empId);
+    if(!e) return;
+    const isIndividual = COMERCIAL_INDIVIDUAL.includes(cargo);
+    const matriculasUsadas = isIndividual ? (individuais[empId]||{}) : poloMatriculas;
+    const r = calcComercial(cargo, matriculasUsadas);
+    totalMes += r.total;
+
+    const detalheWrap = row.querySelector('.com-detalhe-wrap');
+    if(detalheWrap){
+      const detalheHtml = r.detalhe.map(d=>`
+        <div class="note" style="display:flex;justify-content:space-between;gap:8px;">
+          <span>${d.label}: ${d.qtd} matrícula(s) × ${brl(d.valor)}</span>
+          <span><b>${brl(d.valorTotal)}</b></span>
+        </div>`).join('');
+      detalheWrap.innerHTML = `${detalheHtml || '<span class="note">Sem frentes de comissão configuradas para este cargo.</span>'}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:700;border-top:1px solid var(--line);padding-top:8px;">
+          <span>Total do mês</span><span class="com-emp-total">${brl(r.total)}</span>
+        </div>`;
+    }
+  });
+  const totalEl=document.querySelector('.com-total-mes');
+  if(totalEl) totalEl.textContent = brl(totalMes);
+}
 async function trocarMesComercial(){
   const mes=document.getElementById('sel-mes-com').value;
   config.lastSelected.comercial=mes;
-  if(!periodComercial[mes]) periodComercial[mes]={poloMatriculas:{}, individuais:{}};
+  if(!periodComercial[mes]) periodComercial[mes]={individuais:{}};
   await saveConfig();
   renderComercial();
 }
 async function salvarComercial(){
   const mes=document.getElementById('sel-mes-com').value;
-  const poloMatriculas=(periodComercial[mes]&&periodComercial[mes].poloMatriculas)||{};
-  document.querySelectorAll('.com-polo-input').forEach(inp=>{
-    poloMatriculas[inp.dataset.canal]=parseFloat(inp.value)||0;
-  });
   const individuais=(periodComercial[mes]&&periodComercial[mes].individuais)||{};
   document.querySelectorAll('.com-ind-input').forEach(inp=>{
     const empId=inp.dataset.emp, canal=inp.dataset.canal;
     if(!individuais[empId]) individuais[empId]={};
     individuais[empId][canal]=parseFloat(inp.value)||0;
   });
-  periodComercial[mes]={poloMatriculas, individuais};
+  periodComercial[mes]={individuais};
   config.lastSelected.comercial=mes;
   await saveComercial(); await saveConfig();
   renderComercial(); showToast('Apuração do mês salva.');
