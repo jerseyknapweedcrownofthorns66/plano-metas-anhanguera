@@ -383,6 +383,9 @@ button{font-family:'Inter';cursor:pointer;}
 <!-- SDK oficial do Supabase (banco de dados + autenticação) — hospedado junto com o app, sem depender de CDN externo -->
 <script src="./supabase.js"></script>
 
+<!-- SheetJS — leitura de planilhas .xlsx no browser (Modelo 2 da Cobrança) -->
+<script src="./xlsx.min.js"></script>
+
 <!-- Chart.js — usado no gráfico de divisão de comissões por setor (Dashboard) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 
@@ -1497,34 +1500,110 @@ function renderAdministrativo(){
 }
 
 /* ====================== FINANCEIRO (COBRANÇA) — por colaborador, mantém como estava ====================== */
+/* ====================== FINANCEIRO (COBRANÇA) ====================== */
+/* Modelo 1: Inadimplência por colaborador (bimestral)                 */
+/* Modelo 2: Recuperação de crédito via upload de planilha de acordos  */
+
+const GRUPOS_AGING = [
+  {min:1,   max:30,       label:'Grupo 1 (1–30 dias)',    pct:0.02},
+  {min:31,  max:60,       label:'Grupo 2 (31–60 dias)',   pct:0.03},
+  {min:61,  max:150,      label:'Grupo 3 (61–150 dias)',  pct:0.04},
+  {min:151, max:180,      label:'Grupo 4 (151–180 dias)', pct:0.05},
+  {min:181, max:Infinity, label:'Grupo 5 (>180 dias)',    pct:0.06}
+];
+function grupoAging(dias){ return GRUPOS_AGING.find(g=>dias>=g.min&&dias<=g.max)||null; }
+function excelSerialToDate(serial){
+  if(!serial||isNaN(serial)) return null;
+  return new Date(new Date(1899,11,30).getTime()+Math.round(serial)*86400000);
+}
+function processarPlanilhaRecuperacao(rows){
+  const resultado={};
+  rows.forEach(row=>{
+    const status=(row['STATUS PROMESSAS']||row['STATUS_PROMESSAS']||'').toString().trim().toUpperCase();
+    if(status!=='PAGO') return;
+    const usuario=(row['USUARIO']||'').toString().trim().toLowerCase();
+    if(!usuario) return;
+    const rawVenc=row['DATA VENCIMENTO']||row['DATA_VENCIMENTO'];
+    const rawPag =row['DATA PAGAMENTO'] ||row['DATA_PAGAMENTO'];
+    const valorEntrada=parseFloat(row['VALOR DE ENTRADA']||row['VALOR_DE_ENTRADA']||0)||0;
+    if(!rawVenc||!rawPag||valorEntrada<=0) return;
+    const dataVenc=typeof rawVenc==='number'?excelSerialToDate(rawVenc):new Date(rawVenc);
+    const dataPag =typeof rawPag ==='number'?excelSerialToDate(rawPag) :new Date(rawPag);
+    if(!dataVenc||!dataPag||isNaN(dataVenc)||isNaN(dataPag)) return;
+    const dias=Math.round((dataPag.getTime()-dataVenc.getTime())/86400000);
+    if(dias<1) return;
+    const grupo=grupoAging(dias);
+    if(!grupo) return;
+    const comissao=valorEntrada*grupo.pct;
+    if(!resultado[usuario]) resultado[usuario]={grupos:{},total:0};
+    if(!resultado[usuario].grupos[grupo.label]) resultado[usuario].grupos[grupo.label]={valor:0,qtd:0,pct:grupo.pct,valorBase:0};
+    resultado[usuario].grupos[grupo.label].valor+=comissao;
+    resultado[usuario].grupos[grupo.label].qtd+=1;
+    resultado[usuario].grupos[grupo.label].valorBase+=valorEntrada;
+    resultado[usuario].total+=comissao;
+  });
+  return resultado;
+}
+
 function renderFinanceiro(){
   const opts = bimOptions();
   const current = config.lastSelected.financeiro || todayDefaultBim();
   const opt = findOpt(opts, current);
-  const data = periodFinanceiro[current] || {registros:{}};
+  const data = periodFinanceiro[current] || {registros:{},mapeamento:{}};
   const pay = opt? addBusinessDays(opt.fim,5):null;
   const emps = empsBySetor('financeiro');
   let totalBim=0;
 
+  const mapeamento = data.mapeamento || {};
   const rowsHtml = emps.map(e=>{
     const reg = data.registros[e.id] || {inadimplencia:100};
     const r = calcFinanceiro(e.salario, reg.inadimplencia);
     totalBim += r.valor;
+    const usuarioAtual = mapeamento[e.id] || '';
     return `<div class="emp-row" data-emp="${e.id}">
-      <div class="seal-badge ${r.nivel?'hit':''}">${r.nivel? 'N'+r.nivel : '—'}</div>
+      <div class="seal-badge ${r.nivel?'hit':''}">${r.nivel?'N'+r.nivel:'—'}</div>
       <div class="who"><div class="nm">${e.nome}</div><div class="cg">${e.cargo} · ${brl(e.salario)}</div></div>
       <div class="inputs">
         <label class="field">Inadimplência da carteira (%)<input type="number" step="0.1" class="fin-input" data-emp="${e.id}" value="${reg.inadimplencia||0}"></label>
+        <label class="field" style="min-width:160px;">Usuário na planilha de acordos<input type="text" class="fin-usuario-input" data-emp="${e.id}" value="${usuarioAtual}" placeholder="ex: gian.silva" style="font-family:Inter"></label>
       </div>
       <div class="result"><div class="v">${brl(r.valor)}</div><div class="p">${r.pctSalario}% do salário ${r.nivel?'· Nível '+r.nivel:'· sem premiação'}</div></div>
     </div>`;
   }).join('');
 
-  const regraFinanceiroHtml = ruleToggle(`Metas bimestrais por nível de inadimplência <b>da carteira de cada colaborador</b> (aqui sim a meta é individual, pois cada cobrador responde pela própria carteira):<br>
-    • Nível 1 — 0% a 15% → <b>20%</b> do salário<br>
-    • Nível 2 — 15,1% a 20% → <b>15%</b> do salário<br>
-    • Nível 3 — 20,1% a 25% → <b>10%</b> do salário<br>
-    • Acima de 25,1% → sem premiação`);
+  const regraFinanceiroHtml = ruleToggle(`<b>Modelo 1 — Inadimplência:</b> metas bimestrais por nível de inadimplência da carteira de cada colaborador:<br>
+    • Nível 1 — 0% a 15% → <b>20%</b> do salário · Nível 2 — 15,1% a 20% → <b>15%</b> · Nível 3 — 20,1% a 25% → <b>10%</b> · Acima de 25,1% → sem premiação<br><br>
+    <b>Modelo 2 — Recuperação de Crédito:</b> comissão sobre o valor recebido de boletos atrasados, calculada pelo tempo de atraso entre DATA VENCIMENTO e DATA PAGAMENTO:<br>
+    • Grupo 1 (1–30 dias) → <b>2%</b> · Grupo 2 (31–60 dias) → <b>3%</b> · Grupo 3 (61–150 dias) → <b>4%</b> · Grupo 4 (151–180 dias) → <b>5%</b> · Grupo 5 (&gt;180 dias) → <b>6%</b><br>
+    Apenas acordos com STATUS PROMESSAS = PAGO entram no cálculo. Preencha o campo "Usuário na planilha" para vincular cada cobrador ao seu login no sistema de acordos.`);
+
+  const recup = data.recuperacao || null;
+  let totalRecup=0, recupHtml='';
+  if(recup && Object.keys(recup).length>0){
+    const mapaReverso={};
+    emps.forEach(e=>{ if(mapeamento[e.id]) mapaReverso[mapeamento[e.id].toLowerCase()]=e; });
+    const linhas = Object.entries(recup).map(([usuario,r])=>{
+      totalRecup+=r.total;
+      const emp=mapaReverso[usuario];
+      const nomeExib=emp?emp.nome:`<span style="color:var(--danger)">${usuario} <small>(não vinculado)</small></span>`;
+      const gruposHtml=Object.entries(r.grupos).map(([g,v])=>`
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;">
+          <span class="note">${g} — ${v.qtd} acordo(s) · base ${brl(v.valorBase)} · ${(v.pct*100).toFixed(0)}%</span>
+          <span><b>${brl(v.valor)}</b></span>
+        </div>`).join('');
+      return `<div class="emp-row" style="display:block;padding:14px;margin-bottom:8px;">
+        <div class="who" style="margin-bottom:8px;"><div class="nm">${nomeExib}</div></div>
+        ${gruposHtml}
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:700;border-top:1px solid var(--line);padding-top:8px;">
+          <span>Total recuperação</span><span>${brl(r.total)}</span>
+        </div>
+      </div>`;
+    }).join('');
+    const naoMapeados=Object.keys(recup).filter(u=>!mapaReverso[u]);
+    recupHtml=`
+      ${naoMapeados.length?`<div class="rule-box" style="border-color:var(--danger);color:var(--danger);margin-bottom:12px;">Usuários sem vínculo (preencha o campo "Usuário na planilha" acima e salve): <b>${naoMapeados.join(', ')}</b></div>`:''}
+      ${linhas}`;
+  }
 
   document.getElementById('tab-financeiro').innerHTML = `
     ${regraFinanceiroHtml}
@@ -1534,34 +1613,97 @@ function renderFinanceiro(){
       <button class="btn primary" style="align-self:flex-end;" onclick="trocarBimFinanceiro()">Trocar / criar bimestre</button>
     </div>
 
-    <div class="grid cols-2">
-      <div class="card stat"><span class="label-value">Total a pagar no bimestre - <b>${brl(totalBim)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
-      <div class="card stat"><span class="label">Pagamento (5º dia útil)</span><span class="value mono" style="font-size:18px;">${pay?fmtDate(pay):'—'}</span><span class="meta">Fechamento: ${opt?fmtDate(opt.fim):'—'}</span></div>
+    <div class="section-head"><h2>Modelo 1 — Inadimplência</h2><span class="note">Apuração bimestral individual</span></div>
+    <div class="grid cols-2" style="margin-bottom:12px;">
+      <div class="card stat"><span class="label-value">Total Inadimplência - <b>${brl(totalBim)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
+      <div class="card stat"><span class="label">Pagamento (5º dia útil)</span><span class="value" style="font-size:15px;font-family:Inter">${pay?fmtDate(pay):'—'}</span><span class="meta">Fechamento: ${opt?fmtDate(opt.fim):'—'}</span></div>
+    </div>
+    ${emps.length?rowsHtml:`<div class="empty">Nenhum colaborador no setor Financeiro. <a href="#" onclick="goTab('colaboradores');return false;">Cadastrar agora</a>.</div>`}
+    ${emps.length?`<div class="toolbar" style="margin-top:14px;"><button class="btn gold" onclick="salvarFinanceiro()">Salvar Modelo 1 + vínculos de usuário</button></div>`:''}
+
+    <div class="section-head" style="margin-top:28px;"><h2>Modelo 2 — Recuperação de Crédito</h2><span class="note">Upload da planilha de acordos (.xlsx)</span></div>
+    <div class="card" style="padding:16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Planilha de Acordos exportada do sistema</div>
+          <div class="note">O app lê automaticamente, filtra apenas STATUS = PAGO, calcula os dias de atraso e aplica o % de comissão por grupo. Nenhum dado é enviado para fora do seu navegador.</div>
+        </div>
+        <label class="btn gold" style="cursor:pointer;white-space:nowrap;align-self:flex-start;">
+          📂 Selecionar planilha
+          <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="processarPlanilhaAcordos(event)">
+        </label>
+        ${recup?`<button class="btn sm ghost" onclick="limparRecuperacao()">Limpar resultado</button>`:''}
+      </div>
+      ${data.recuperacaoInfo?`<div class="note" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">Último processamento: <b>${data.recuperacaoInfo.arquivo}</b> — ${data.recuperacaoInfo.totalPago} acordos PAGO em ${data.recuperacaoInfo.data}</div>`:''}
     </div>
 
-    <div class="section-head"><h2>Apuração individual</h2><span class="note">${emps.length} colaborador(es)</span></div>
-    ${emps.length? rowsHtml : `<div class="empty">Nenhum colaborador cadastrado no setor Financeiro. <a href="#" onclick="goTab('colaboradores');return false;">Cadastrar agora</a>.</div>`}
-    ${emps.length? `<div class="toolbar" style="margin-top:14px;"><button class="btn gold" onclick="salvarFinanceiro()">Salvar apuração do bimestre</button></div>` : ''}
+    ${recup&&Object.keys(recup).length>0?`
+      <div class="grid cols-2" style="margin-bottom:14px;">
+        <div class="card stat"><span class="label-value">Total Recuperação - <b>${brl(totalRecup)}</b></span><span class="meta">${opt?opt.label:''}</span></div>
+        <div class="card stat"><span class="label-value">Total Geral (Mod. 1 + 2) - <b>${brl(totalBim+totalRecup)}</b></span><span class="meta">Ambos os modelos</span></div>
+      </div>
+      <div class="section-head"><h2>Resultado por cobrador — Recuperação</h2></div>
+      ${recupHtml}
+    `:`<div class="empty">Nenhuma planilha processada para este bimestre. Faça o upload acima.</div>`}
   `;
 }
 async function trocarBimFinanceiro(){
   const bim=document.getElementById('sel-bim-f').value;
   config.lastSelected.financeiro=bim;
-  if(!periodFinanceiro[bim]) periodFinanceiro[bim]={registros:{}};
+  if(!periodFinanceiro[bim]) periodFinanceiro[bim]={registros:{},mapeamento:{}};
   await saveConfig();
   renderFinanceiro();
 }
 async function salvarFinanceiro(){
   const bim=document.getElementById('sel-bim-f').value;
   const registros=(periodFinanceiro[bim]&&periodFinanceiro[bim].registros)||{};
+  const mapeamento=(periodFinanceiro[bim]&&periodFinanceiro[bim].mapeamento)||{};
   document.querySelectorAll('.fin-input').forEach(inp=>{
-    const empId=inp.dataset.emp;
-    registros[empId]={inadimplencia: parseFloat(inp.value)||0};
+    registros[inp.dataset.emp]={inadimplencia:parseFloat(inp.value)||0};
   });
-  periodFinanceiro[bim]={registros};
+  document.querySelectorAll('.fin-usuario-input').forEach(inp=>{
+    const val=(inp.value||'').trim().toLowerCase();
+    if(val) mapeamento[inp.dataset.emp]=val; else delete mapeamento[inp.dataset.emp];
+  });
+  periodFinanceiro[bim]={...periodFinanceiro[bim],registros,mapeamento};
   config.lastSelected.financeiro=bim;
   await saveFinanceiro(); await saveConfig();
-  renderFinanceiro(); showToast('Apuração do bimestre salva.');
+  renderFinanceiro(); showToast('Bimestre salvo.');
+}
+async function processarPlanilhaAcordos(event){
+  const file=event.target.files[0];
+  if(!file) return;
+  if(typeof XLSX==='undefined'){ showToast('Biblioteca XLSX não carregada.'); return; }
+  showToast('Processando planilha...');
+  try{
+    const ab=await file.arrayBuffer();
+    const wb=XLSX.read(ab,{type:'array',cellDates:false});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+    const resultado=processarPlanilhaRecuperacao(rows);
+    const totalPago=rows.filter(r=>(r['STATUS PROMESSAS']||r['STATUS_PROMESSAS']||'').toString().trim().toUpperCase()==='PAGO').length;
+    const bim=config.lastSelected.financeiro||todayDefaultBim();
+    if(!periodFinanceiro[bim]) periodFinanceiro[bim]={registros:{},mapeamento:{}};
+    periodFinanceiro[bim].recuperacao=resultado;
+    periodFinanceiro[bim].recuperacaoInfo={arquivo:file.name,totalPago,data:new Date().toLocaleDateString('pt-BR')};
+    await saveFinanceiro();
+    renderFinanceiro();
+    showToast(`Pronto! ${totalPago} acordos PAGO processados.`);
+  }catch(e){
+    console.error(e);
+    showToast('Erro ao processar. Verifique o arquivo.');
+  }
+}
+async function limparRecuperacao(){
+  if(!confirm('Limpar o resultado de recuperação deste bimestre?')) return;
+  const bim=config.lastSelected.financeiro||todayDefaultBim();
+  if(periodFinanceiro[bim]){
+    delete periodFinanceiro[bim].recuperacao;
+    delete periodFinanceiro[bim].recuperacaoInfo;
+    await saveFinanceiro();
+  }
+  renderFinanceiro();
+  showToast('Resultado de recuperação removido.');
 }
 
 /* ====================== PREMIAÇÃO GERAL (leitura do Crescimento do Polo) ====================== */
